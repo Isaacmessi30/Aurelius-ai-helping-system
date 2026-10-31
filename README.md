@@ -80,3 +80,6 @@ Natural-language start/stop/restart flow: user asks, selects a verified server i
 **Not yet implemented:** automatic schedule-task construction, automatic ticket deduplication, incident-status integration, automatic knowledge improvement, arbitrary code repair, service extensions or billing changes. Live Paymenter and Pterodactyl API requests require actual credentials and staging verification; CI only checks code initialization and local tests.
 
 All protected mutations also honor `PTERODACTYL_ACTIONS_ENABLED=false` as a fail-closed global safety switch.
+
+## Schedule operations
+Owner-approved schedule deletion and enable/disable are now recognized from natural-language requests containing the schedule ID. The AI first confirms the verified server with the customer. Schedule creation currently supports validated cron fields in the backend, but natural-language schedule creation and task editing remain incomplete. No duplicate-ticket system is planned.
