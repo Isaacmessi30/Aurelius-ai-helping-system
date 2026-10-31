@@ -18,6 +18,7 @@ const validServer=id=>/^[a-z0-9]{8}$/.test(id);
 const validateEmail=s=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)&&s.length<=191;
 export const MUTATIONS=Object.freeze(['add_subuser','remove_subuser','startup_bash','startup_default','startup_custom','startup_variable','create_backup','restore_backup','create_schedule']);
 export async function executeProtected(request) {
+  if (process.env.PTERODACTYL_ACTIONS_ENABLED !== 'true') throw Error('Live Pterodactyl actions are disabled.');
   if (!MUTATIONS.includes(request.action))throw Error('Unsupported action');
   if(!validServer(request.serverId))throw Error('Invalid server ID');
   const account=await getVerifiedCustomer(request.discordId);
