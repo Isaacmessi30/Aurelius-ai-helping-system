@@ -52,3 +52,6 @@ GitHub Actions runs `npm install` and `npm run check` on pull requests. Live Dis
 CI also exercises command initialization in `AI_DRY_RUN=true` mode without logging in to Discord or contacting DeepSeek.
 
 Ticket categories automatically include all their child text channels and threads; individual channel registration is optional. If the bot does not reply after a code update, deploy the latest `main` to Pterodactyl and restart.
+
+## Ticket Inquiry context
+At the first customer message, the AI reads up to the latest 100 messages in the ticket and extracts the `Inquiry` field from its opening embed. The inquiry is included as untrusted support context, so the AI understands the original problem without asking the customer to repeat it. The bot needs Read Message History permission. Requests like `connect me to a human` immediately notify staff.
