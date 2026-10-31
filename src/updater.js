@@ -10,24 +10,35 @@ const run = (command, args, timeout = 120000) => new Promise((resolve, reject) =
 
 export async function updateFromGitHub() {
   const backupDir = await fs.mkdtemp(path.join(os.tmpdir(), 'aurelius-update-'));
-  const backup = path.join(backupDir, 'env');
-  let hadEnv = false;
+  const preserved = ['.env', 'data/config.json'];
+  const backups = new Map();
   let updated = false;
   try {
-    try { await fs.copyFile('.env', backup); hadEnv = true; }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
     const branch = await run('git', ['branch', '--show-current']);
     if (branch !== 'main') throw new Error('Updates require the main branch.');
     const modified = await run('git', ['status', '--porcelain', '--untracked-files=no']);
-    if (modified.split('\n').filter(Boolean).some(line => !line.endsWith(' .env'))) {
-      throw new Error('Tracked local modifications detected. Resolve them before updating.');
+    const changed = modified.split('\n').filter(Boolean).map(line => line.slice(3));
+    const unexpected = changed.filter(file => !preserved.includes(file));
+    if (unexpected.length) {
+      throw new Error('Other tracked files have local changes: ' + unexpected.slice(0, 8).join(', ') +
+        '. Preserve or commit them manually before updating.');
     }
-    // This repository currently tracks .env, so restore it only after backup.
-    if (hadEnv) await run('git', ['restore', '--', '.env']);
+    for (const file of preserved) {
+      try {
+        const destination = path.join(backupDir, file.replaceAll('/', '_'));
+        await fs.copyFile(file, destination);
+        backups.set(file, destination);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+    }
+    // Restore only tracked runtime configuration files, after safe backups.
+    for (const file of changed) {
+      if (backups.has(file)) await run('git', ['restore', '--', file]);
+    }
     const before = await run('git', ['rev-parse', 'HEAD']);
     await run('git', ['fetch', '--quiet', 'origin', 'main']);
-    const ahead = await run('git', ['rev-list', '--count', 'HEAD..origin/main']);
-    if (Number(ahead) > 0) {
+    if (Number(await run('git', ['rev-list', '--count', 'HEAD..origin/main'])) > 0) {
       await run('git', ['merge', '--ff-only', 'origin/main']);
       updated = true;
     }
@@ -35,12 +46,11 @@ export async function updateFromGitHub() {
     await run(process.execPath, ['--check', 'src/index.js']);
     return { updated, before, after: await run('git', ['rev-parse', 'HEAD']) };
   } finally {
-    if (hadEnv) {
-      await fs.copyFile(backup, '.env');
-      await fs.rm(backupDir, { recursive: true, force: true });
-    } else {
-      await fs.rm(backupDir, { recursive: true, force: true });
+    for (const [file, backup] of backups) {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.copyFile(backup, file);
     }
+    await fs.rm(backupDir, { recursive: true, force: true });
   }
 }
 
