@@ -248,10 +248,11 @@ client.on('interactionCreate', async i => {
   if (!i.isButton() || !i.customId.startsWith('ai:approval:')) return;
   const owner = process.env.OWNER_ID;
   if (!owner || i.user.id !== owner) return i.reply({content:'Only the configured bot owner can review live actions.',flags:MessageFlags.Ephemeral});
-  const [,,,decision,id] = i.customId.split(':');
+  const [,,decision,id] = i.customId.split(':');
   const record = getApproval(id);
   if (!record || record.status !== 'pending') return i.reply({content:'This request is no longer pending.',flags:MessageFlags.Ephemeral});
   if (record.guildId !== i.guildId) return i.reply({content:'Wrong server.',flags:MessageFlags.Ephemeral});
+  resolveApproval(id,'processing',i.user.id,'Awaiting action result');
   await i.deferUpdate();
   let status = decision === 'deny' ? 'denied' : decision === 'human' ? 'staff_takeover' : 'approved';
   let detail = '';
