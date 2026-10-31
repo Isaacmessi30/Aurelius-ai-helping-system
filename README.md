@@ -61,3 +61,9 @@ Optional Pterodactyl support: set `PTERODACTYL_ACTIONS_ENABLED=true`, `PTERODACT
 Inquiry reader checks up to 500 recent ticket messages and logs whether the inquiry is found. The first reply should address the inquiry directly.
 
 AI messaging accurately describes the optional owner-approved Pterodactyl power workflow. Ordinary chat never executes live server actions.
+
+## Pterodactyl stop behavior
+Use `node src/index.js` as the final foreground process in Startup (prefer `exec node src/index.js` when a shell is used). Avoid `npm start` inside nested `bash -c` shells when diagnosing Stop/Kill issues. The bot now handles SIGTERM and SIGINT to close its Discord client. If the panel still requires Kill, verify the Pterodactyl egg sends the stop signal to the running Node process and has a sensible stop timeout.
+
+## Owner update
+`/ai update` fetches `main`, backs up and restores `.env`, installs dependencies, checks syntax and optionally restarts its own Pterodactyl server. To restart automatically, configure `AI_BOT_SERVER_ID`, `PTERODACTYL_URL`, and `PTERODACTYL_CLIENT_API_KEY` with appropriate permission. Use `OWNER_ID` to restrict command use. Updates run with repository write access, so protect the GitHub account and review changes before deploying.
