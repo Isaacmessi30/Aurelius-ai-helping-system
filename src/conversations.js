@@ -1,3 +1,4 @@
+import { matchServer, matchFromRequest } from './server-matcher.js';
 import { getVerifiedCustomer, verifiedServerFor } from './identity-live.js';
 import { formatServerList, normalizeServerChoice, mayExecute } from './action-policy.js';
 
@@ -21,8 +22,10 @@ export async function beginPowerConversation(discordId, input, sessionKey = disc
   if (!account) return { type:'unlinked', message:'Please connect your Discord account to billing using **/account link** first. I cannot manage servers until your account ownership is verified.' };
   if (!account.servers.length) return {type:'empty', message:'Your linked billing account has no verified Pterodactyl servers.'};
   const matches = account.servers.filter(s => [s.identifier,s.name].some(v => input.toLowerCase().includes(v.toLowerCase())));
-  const exact = matches.length === 1 ? matches[0] : account.servers.length === 1 ? account.servers[0] : null;
+  const guess = matches.length === 1 ? {kind:'exact',server:matches[0]} : matchFromRequest(input,account.servers);
+  const exact = guess.kind==='exact' ? guess.server : account.servers.length===1 ? account.servers[0] : null;
   sessions.set(sessionKey, { request, servers:account.servers, selected:exact?.identifier || null, expires:Date.now()+5*60*1000 });
+  if (!exact && guess.kind==='suggest') return {type:'suggest',server:guess.server,message:'**Server verification**\nDid you mean **'+guess.server.name+'** | ID: `'+guess.server.identifier+'`?\nPlease confirm the server before I continue.'};
   if (!exact) return {type:'select',message:'Which server do you mean? Reply with its ID or full name:\n'+formatServerList(account.servers)};
   return {type:'confirm',server:exact,request,message:'Please confirm: **'+request.signal+'** server **'+exact.name+'** (ID: '+exact.identifier+'). No change has been made yet.'};
 }
@@ -31,7 +34,9 @@ export function selectServer(sessionKey,input) {
   if (!state) return null;
   if (state.expires < Date.now()) { sessions.delete(sessionKey); return {type:'expired',message:'The request expired. Please start again.'}; }
   if (state.selected) return null;
-  const server = normalizeServerChoice(input,state.servers);
+  const guess=matchServer(input,state.servers);
+  const server = guess.kind==='exact'?guess.server:null;
+  if (guess.kind==='suggest') return {type:'suggest',server:guess.server,message:'**Server verification**\nDid you mean **'+guess.server.name+'** | ID: `'+guess.server.identifier+'`?\nPlease confirm the server before I continue.'};
   if (!server) return {type:'select',message:'Please choose an exact server name or ID:\n'+formatServerList(state.servers)};
   state.selected=server.identifier;
   return {type:'confirm',server,request:state.request,message:'Please confirm: **'+state.request.signal+'** server **'+server.name+'** (ID: '+server.identifier+').'};
@@ -42,6 +47,7 @@ export async function getPending(discordId,sessionKey = discordId) {
   const server=await verifiedServerFor(discordId,state.selected);
   return server ? {server,action:state.request.action,signal:state.request.signal} : null;
 }
+export function confirmSuggestion(sessionKey,serverId){const state=sessions.get(sessionKey);if(!state||state.expires<Date.now()||!state.servers.some(s=>s.identifier===serverId))return null;state.selected=serverId;return state.request;}
 export function finish(sessionKey) { sessions.delete(sessionKey); }
 export async function allowPower(discordId, action) {
   const pending=await getPending(discordId);
