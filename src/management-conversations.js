@@ -1,3 +1,4 @@
+import { matchServer, matchFromRequest } from './server-matcher.js';
 import { getVerifiedCustomer } from './identity-live.js';
 import { formatServerList, normalizeServerChoice } from './action-policy.js';
 const sessions=new Map();
@@ -35,8 +36,10 @@ export async function startManaged(m,input) {
   if(!account)return {type:'text',message:'Connect your Discord account to Paymenter with **/account link** first. No changes were made.'};
   if(!account.servers.length)return {type:'text',message:'No verified Pterodactyl servers belong to your linked account.'};
   const matches=account.servers.filter(s=>input.toLowerCase().includes(s.identifier)||input.toLowerCase().includes(s.name.toLowerCase()));
-  const server=matches.length===1?matches[0]:account.servers.length===1?account.servers[0]:null;
+  const guess=matches.length===1?{kind:'exact',server:matches[0]}:matchFromRequest(input,account.servers);
+  const server=guess.kind==='exact'?guess.server:account.servers.length===1?account.servers[0]:null;
   sessions.set(requestKey(m),{intent,selected:server?.identifier||null,expires:Date.now()+300000});
+  if(!server&&guess.kind==='suggest')return {type:'suggest',server:guess.server,message:'**Server verification**\nDid you mean **'+guess.server.name+'** | ID: `'+guess.server.identifier+'`?\nPlease confirm the server before I prepare the change.'};
   return server?{type:'confirm',server,intent,message:description(server,intent)}:
     {type:'text',message:'Which of your servers should I use? Reply with its full name or ID:\n'+formatServerList(account.servers)};
 }
@@ -53,7 +56,9 @@ export async function continueManaged(m,input) {
   if(state.selected)return null;
   const account=await getVerifiedCustomer(m.author.id);
   if(!account){sessions.delete(key);return {type:'text',message:'Your account is no longer linked. Use /account link.'};}
-  const match=normalizeServerChoice(input,account.servers);
+  const guess=matchServer(input,account.servers);
+  const match=guess.kind==='exact'?guess.server:null;
+  if(guess.kind==='suggest')return {type:'suggest',server:guess.server,message:'**Server verification**\nDid you mean **'+guess.server.name+'** | ID: `'+guess.server.identifier+'`?\nPlease confirm the server before I prepare the change.'};
   if(!match)return {type:'text',message:'Please use the exact name or ID:\n'+formatServerList(account.servers)};
   state.selected=match.identifier;
   return {type:'confirm',server:match,intent:state.intent,message:description(match,state.intent)};
@@ -65,4 +70,5 @@ export async function pendingManaged(m) {
   const server=account?.servers.find(s=>s.identifier===state.selected);
   return server?{action:state.intent.action,values:state.intent.values,server}:null;
 }
+export function confirmManagedSuggestion(m,serverId){const state=sessions.get(requestKey(m));if(!state||state.expires<Date.now()||state.selected)return null;state.selected=serverId;return state.intent;}
 export function clearManaged(m){sessions.delete(requestKey(m));}
