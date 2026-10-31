@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   Client, GatewayIntentBits, ChannelType, PermissionFlagsBits,
-  SlashCommandBuilder, REST, Routes, MessageFlags
+  SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder
 } from 'discord.js';
 import OpenAI from 'openai';
-import { humanRequest, professionalEmbed, auditLog } from './support.js';
+import { humanRequest, professionalEmbed, auditLog, setupPanel, setupOptions } from './support.js';
 
 const ROOT = process.cwd();
 const CONFIG_PATH = path.join(ROOT, 'data/config.json');
@@ -158,6 +158,7 @@ async function escalation(channel, requester, reason = 'Customer requested human
   }
 }
 const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius AI support controls')
+  .addSubcommand(s => s.setName('setup').setDescription('Open interactive AI configuration dashboard'))
   .addSubcommand(s => s.setName('enable').setDescription('Enable AI replies'))
   .addSubcommand(s => s.setName('disable').setDescription('Disable AI replies'))
   .addSubcommand(s => s.setName('status').setDescription('Show configuration and monthly usage'))
@@ -197,6 +198,7 @@ async function handleCommand(i) {
     return i.editReply('A staff member has been notified.');
   }
   if (!isAdmin(i)) return i.reply({ content: 'Manage Server permission is required.', flags: MessageFlags.Ephemeral });
+  if (sub === 'setup') return i.reply({ ...setupPanel(config), flags: MessageFlags.Ephemeral });
   if (sub === 'status') {
     refreshUsage();
     return i.reply({ content: [
@@ -226,6 +228,39 @@ async function handleCommand(i) {
   saveConfig();
   return i.reply({ content: '✅ Updated Aurelius AI configuration (' + (group ? group + ' ' : '') + sub + ').', flags: MessageFlags.Ephemeral });
 }
+client.on('interactionCreate', async i => {
+  if (!i.isMessageComponent() || !i.customId.startsWith('ai:setup:')) return;
+  if (!isAdmin(i)) return i.reply({ content:'Manage Server permission required.', flags:MessageFlags.Ephemeral });
+  try {
+    const id = i.customId;
+    if (id === 'ai:setup:toggle') {
+      config.enabled = !config.enabled; saveConfig();
+      return i.update(setupPanel(config));
+    }
+    if (id === 'ai:setup:refresh') return i.update(setupPanel(config));
+    if (id === 'ai:setup:select') {
+      const kind = i.values[0];
+      let selector;
+      if (kind === 'category') selector = new ChannelSelectMenuBuilder().setCustomId('ai:setup:choose:category').setPlaceholder('Select ticket category').addChannelTypes(ChannelType.GuildCategory);
+      else if (kind === 'staff') selector = new RoleSelectMenuBuilder().setCustomId('ai:setup:choose:staff').setPlaceholder('Select staff role');
+      else if (kind === 'logs') selector = new ChannelSelectMenuBuilder().setCustomId('ai:setup:choose:logs').setPlaceholder('Select staff log channel').addChannelTypes(ChannelType.GuildText);
+      else if (kind === 'model') return i.update({ embeds:setupPanel(config).embeds, components:[setupOptions('model')] });
+      return i.update({ embeds:setupPanel(config).embeds, components:[new ActionRowBuilder().addComponents(selector)] });
+    }
+    if (id.startsWith('ai:setup:choose:')) {
+      const kind = id.split(':').pop(), value = i.values[0];
+      if (kind === 'category') config.categoryIds = [...new Set([...config.categoryIds, value])];
+      if (kind === 'staff') config.staffRoleIds = [...new Set([...config.staffRoleIds, value])];
+      if (kind === 'logs') config.logChannelId = value;
+      if (kind === 'model') config.model = value;
+      saveConfig();
+      return i.update(setupPanel(config));
+    }
+  } catch (err) {
+    console.error('AI setup interaction:', err);
+    if (!i.replied && !i.deferred) await i.reply({content:'Unable to update setup. Check bot permissions.',flags:MessageFlags.Ephemeral}).catch(()=>{});
+  }
+});
 client.on('interactionCreate', async i => {
   if (!i.isChatInputCommand() || i.commandName !== 'ai') return;
   try { await handleCommand(i); }
