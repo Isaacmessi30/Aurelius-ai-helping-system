@@ -65,8 +65,17 @@ function refreshUsage() {
   if (usage.month !== month) usage = { month, requests: 0, tokens: 0 };
 }
 function isTicket(channel) {
-  return !!(channel?.guild && (config.channelIds.includes(channel.id) ||
-    (channel.parentId && config.categoryIds.includes(channel.parentId))));
+  if (!channel?.guild) return false;
+  if (config.channelIds.includes(channel.id)) return true;
+  // Standard text channels are children of a category.
+  if (channel.parentId && config.categoryIds.includes(channel.parentId)) return true;
+  // Threads are children of a ticket text channel, not directly of its category.
+  if (channel.isThread?.()) {
+    const parent = channel.parent || channel.guild.channels.cache.get(channel.parentId);
+    return Boolean(parent && (config.channelIds.includes(parent.id) ||
+      (parent.parentId && config.categoryIds.includes(parent.parentId))));
+  }
+  return false;
 }
 function isStaff(member) {
   return !!(member?.permissions?.has(PermissionFlagsBits.ManageGuild) ||
