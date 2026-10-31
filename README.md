@@ -85,3 +85,6 @@ All protected mutations also honor `PTERODACTYL_ACTIONS_ENABLED=false` as a fail
 Owner-approved schedule deletion and enable/disable are now recognized from natural-language requests containing the schedule ID. The AI first confirms the verified server with the customer. Schedule creation currently supports validated cron fields in the backend, but natural-language schedule creation and task editing remain incomplete. No duplicate-ticket system is planned.
 
 Run `/ai health` as an owner or server manager to inspect Paymenter and Pterodactyl API connectivity without revealing credentials. This is a connectivity probe; it does not certify server ownership or perform a live mutation.
+
+## Console diagnostics (staged)
+When a customer reports a crash or startup error, the AI verifies account ownership and retrieves a bounded snapshot of Pterodactyl console output over the authenticated WebSocket. Potential credentials are redacted before displaying output. If no error is found, the user may choose **Start for diagnosis**; the bot logs the request, sends a start power signal and retrieves startup output. No file edits or repeated automatic starts are performed. Requires Node 22's WebSocket implementation, enabled live actions for startup, and a configured audit channel. Live end-to-end verification is still required.
