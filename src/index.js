@@ -294,10 +294,10 @@ async function handleCommand(i) {
         ? balances.map(b => {
             const currency = /^[A-Z]{3}$/.test(b.currency || '') ? b.currency : 'USD';
             return '**' + money(b.total_balance, currency) + ' ' + currency + '**';
-          }).join('\\n')
+          }).join('\n')
         : '**Balance unavailable**';
       return i.editReply({embeds:[professionalEmbed('DeepSeek Balance',
-        '## Current balance\\n' + headline,
+        '## Current balance\n' + headline,
         fields,
         data.is_available ? 'success' : 'warning')]});
     }catch(err){console.error('[AI balance]',err.message);return i.editReply('Unable to retrieve DeepSeek balance: '+String(err.message).slice(0,160));}
