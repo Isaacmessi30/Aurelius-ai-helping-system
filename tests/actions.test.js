@@ -41,3 +41,15 @@ test('schedule mutations always require owner approval',()=>{
   assert.deepEqual(parseManagement('Delete schedule 12'),{action:'delete_schedule',values:{scheduleId:'12'}});
   assert.deepEqual(parseManagement('Disable schedule 8'),{action:'toggle_schedule',values:{scheduleId:'8'}});
 });
+
+import { matchServer } from '../src/server-matcher.js';
+test('fuzzy server suggestions require confirmation and avoid ambiguity',()=>{
+ const servers=[{name:'Minecraft Survival',identifier:'abcde123'},{name:'Discord Worker',identifier:'qwert123'}];
+ assert.equal(matchServer('minecraft',servers).kind,'suggest');
+ assert.equal(matchServer('minecraf survival',servers).kind,'suggest');
+ assert.equal(matchServer('abcde123',servers).kind,'exact');
+ assert.equal(matchServer('xyz',servers).kind,'none');
+ assert.equal(matchServer('discord',servers).server.name,'Discord Worker');
+ const ambiguous=[{name:'Alpha One',identifier:'aaaabbbb'},{name:'Alpha Two',identifier:'ccccdddd'}];
+ assert.equal(matchServer('alpha',ambiguous).kind,'none');
+});
