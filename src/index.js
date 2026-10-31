@@ -6,6 +6,7 @@ import {
   SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder
 } from 'discord.js';
 import OpenAI from 'openai';
+import { integrationHealth } from './health.js';
 import { getVerifiedCustomer } from './identity-live.js';
 import { beginPowerConversation, selectServer, getPending, finish } from './conversations.js';
 import { mayExecute, formatServerList } from './action-policy.js';
@@ -177,6 +178,7 @@ const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius
   .addSubcommand(s => s.setName('enable').setDescription('Enable AI replies'))
   .addSubcommand(s => s.setName('disable').setDescription('Disable AI replies'))
   .addSubcommand(s => s.setName('status').setDescription('Show configuration and monthly usage'))
+  .addSubcommand(s => s.setName('health').setDescription('Check private billing and panel API integrations'))
   .addSubcommand(s => s.setName('summary').setDescription('Summarize this ticket for support staff'))
   .addSubcommand(s => s.setName('escalate').setDescription('Request a human support agent'))
   .addSubcommand(s => s.setName('reset').setDescription('Reset AI conversation in this ticket'))
@@ -256,6 +258,15 @@ async function handleCommand(i) {
     }
   }
   if (sub === 'setup') return i.reply({ ...setupPanel(config), flags: MessageFlags.Ephemeral });
+  if (sub === 'health') {
+    await i.deferReply({flags:MessageFlags.Ephemeral});
+    const h=await integrationHealth();
+    return i.editReply({content:'**Aurelius integration health**\n'+
+      'Paymenter: '+h.billing+'\nPterodactyl Client: '+h.panelClient+
+      '\nPterodactyl Application: '+h.panelApplication+
+      '\nLive actions: '+h.actions+'\nAudit channel: '+h.audit+'\nOwner: '+h.owner+
+      '\nThis checks connectivity, not end-to-end ownership or safe action execution.'});
+  }
   if (sub === 'status') {
     refreshUsage();
     return i.reply({ content: [
