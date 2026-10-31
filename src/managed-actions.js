@@ -31,8 +31,15 @@ export async function executeProtected(request) {
     return 'Subuser invitation submitted with read-only console permission.';
   }
   if(request.action==='remove_subuser'){
-    if(!/^[a-f0-9-]{36}$/i.test(v.uuid||''))throw Error('Invalid subuser UUID');
-    await api(base+'/users/'+v.uuid,'DELETE');return 'Subuser access removed.';
+    let uuid=v.uuid;
+    if(!uuid && validateEmail(v.email||'')){
+      const users=await api(base+'/users');
+      const matches=(users.data||[]).filter(u=>String(u.attributes?.email||'').toLowerCase()===v.email.toLowerCase());
+      if(matches.length!==1)throw Error('No unique subuser matches that email');
+      uuid=matches[0].attributes.uuid;
+    }
+    if(!/^[a-f0-9-]{36}$/i.test(uuid||''))throw Error('Invalid subuser UUID');
+    await api(base+'/users/'+uuid,'DELETE');return 'Subuser access removed.';
   }
   if(request.action==='create_backup'){
     const details=await api(base),slots=Number(details.attributes?.feature_limits?.backups);
