@@ -8,7 +8,10 @@ import {
 import OpenAI from 'openai';
 import { getVerifiedCustomer } from './identity-live.js';
 import { beginPowerConversation, selectServer, getPending, finish } from './conversations.js';
-import { mayExecute } from './action-policy.js';
+import { mayExecute, formatServerList } from './action-policy.js';
+import { inspectServer, subscriptions } from './inspect.js';
+import { executeProtected } from './managed-actions.js';
+import { startManaged, continueManaged, pendingManaged, clearManaged } from './management-conversations.js';
 import { updateFromGitHub, restartOwnServer } from './updater.js';
 import { humanRequest, professionalEmbed, auditLog, setupPanel, setupOptions, createApproval, getApproval, resolveApproval, approvalCard, pterodactylPowerAction } from './support.js';
 
@@ -265,6 +268,7 @@ client.on('interactionCreate', async i => {
   if (!owner || i.user.id !== owner) return i.reply({content:'Only the configured bot owner can review live actions.',flags:MessageFlags.Ephemeral});
   const [,,decision,id] = i.customId.split(':');
   const record = getApproval(id);
+  if (record && record.kind !== 'managed') return i.reply({content:'Legacy approval request blocked. Please create a fresh verified request.',flags:MessageFlags.Ephemeral});
   if (!record || record.status !== 'pending') return i.reply({content:'This request is no longer pending.',flags:MessageFlags.Ephemeral});
   if (record.guildId !== i.guildId) return i.reply({content:'Wrong server.',flags:MessageFlags.Ephemeral});
   resolveApproval(id,'processing',i.user.id,'Awaiting action result');
@@ -273,8 +277,8 @@ client.on('interactionCreate', async i => {
   let detail = '';
   if (decision === 'accept') {
     try {
-      await pterodactylPowerAction(record.serverId,record.action);
-      status = 'executed'; detail = 'API accepted power signal';
+      detail = await executeProtected({discordId:record.customerId,serverId:record.serverId,action:record.action,values:record.values});
+      status = 'executed';
     } catch(err) { status = 'failed'; detail = err.message; }
   }
   resolveApproval(id,status,i.user.id,detail);
@@ -337,6 +341,30 @@ client.on('interactionCreate', async i => {
   }
 });
 client.on('interactionCreate', async i => {
+  if (!i.isButton() || !i.customId.startsWith('ai:managed:')) return;
+  const [, , decision, discordId] = i.customId.split(':');
+  if (discordId !== i.user.id) return i.reply({content:'Only the customer who requested this change can confirm it.',flags:MessageFlags.Ephemeral});
+  const msgContext={guildId:i.guildId,channelId:i.channelId,author:{id:i.user.id}};
+  if (decision === 'cancel'){clearManaged(msgContext);return i.update({content:'Cancelled; no change made.',components:[]});}
+  const pending=await pendingManaged(msgContext).catch(()=>null);
+  if(!pending)return i.reply({content:'Request expired or ownership could not be verified.',flags:MessageFlags.Ephemeral});
+  const logId=process.env.AI_ACTION_LOG_CHANNEL_ID;
+  const log=logId?await client.channels.fetch(logId).catch(()=>null):null;
+  if(!log?.isTextBased()||!process.env.OWNER_ID)
+    return i.reply({content:'Owner approval and action log channel must be configured before requests can be submitted.',flags:MessageFlags.Ephemeral});
+  const approval=createApproval({guildId:i.guildId,ticketId:i.channelId,customerId:i.user.id,
+    serverId:pending.server.identifier,action:pending.action,values:pending.values,kind:'managed'});
+  clearManaged(msgContext);
+  try{
+    await log.send({...approvalCard(approval),allowedMentions:{parse:[]}});
+    await i.update({content:'Request sent for owner approval. No live action has occurred.',components:[]});
+  }catch(err){
+    resolveApproval(approval.id,'failed','system','Unable to post review: '+err.message);
+    console.error('[AI approval queue]',err);
+    await i.update({content:'Unable to submit for owner approval; no action performed.',components:[]}).catch(()=>{});
+  }
+});
+client.on('interactionCreate', async i => {
   if (!i.isButton() || !i.customId.startsWith('ai:power:')) return;
   const [, , action, userId] = i.customId.split(':');
   if (i.user.id !== userId) return i.reply({content:'Only the requesting customer can confirm this action.',flags:MessageFlags.Ephemeral});
@@ -378,6 +406,47 @@ client.on('messageCreate', async m => {
     return;
   }
   if (!input || input.startsWith('/') || input.length > 3500) return;
+  let managed;
+  try { managed = await continueManaged(m,input) || await startManaged(m,input); }
+  catch(err) { console.error('[AI management request]',err); await m.channel.send('Account verification is unavailable. No changes were made.'); return; }
+  if (managed) {
+    if(managed.type==='confirm') {
+      const row=new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ai:managed:confirm:'+m.author.id).setLabel('Confirm request').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ai:managed:cancel:'+m.author.id).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
+      );
+      await m.channel.send({content:managed.message,components:[row],allowedMentions:{parse:[]}});
+    }else await m.channel.send({content:managed.message,allowedMentions:{parse:[]}});
+    return;
+  }
+  if(/(?:list|show|vilka|visa|mina|my)\s+(?:all\s+)?(?:servers|servrar|panels|paneler)/i.test(input)) {
+    try{
+      const account=await getVerifiedCustomer(m.author.id);
+      await m.channel.send(account?'Your verified servers:\n'+formatServerList(account.servers):'Please use **/account link** to connect Discord and billing.');
+    }catch(err){await m.channel.send('Unable to verify your hosting account right now.');}
+    return;
+  }
+  if(/(?:subscription|subscriptions|prenumeration|abonnemang|billing plan)/i.test(input)) {
+    try{await m.channel.send({content:(await subscriptions(m.author.id)).slice(0,1900),allowedMentions:{parse:[]}});}
+    catch(err){console.error('[Paymenter lookup]',err);await m.channel.send('Unable to retrieve your subscription information at the moment.');}
+    return;
+  }
+  const inspectKind =
+    /(?:subuser|sub-user|medanvändare)/i.test(input)&&/(?:list|show|visa|who|vilka)/i.test(input)?'subusers':
+    /(?:docker image|startup setting|startup command|start script)/i.test(input)&&/(?:show|view|visa|what|check|vilken)/i.test(input)?'startup':
+    /(?:backup|säkerhetskopia)/i.test(input)&&/(?:list|show|visa|what)/i.test(input)?'backups':
+    /(?:schedule|schema|schemalägg)/i.test(input)&&/(?:list|show|visa)/i.test(input)?'schedules':
+    /(?:allocation|port|ports)/i.test(input)&&/(?:list|show|visa|check)/i.test(input)?'allocations':
+    /(?:status|cpu|ram|memory|disk|suspended|resource|resurs)/i.test(input)&&/(?:check|show|visa|what|how|hur|is|är)/i.test(input)?'status':null;
+  if(inspectKind){
+    try{
+      const account=await getVerifiedCustomer(m.author.id);
+      const match=account?.servers.find(s=>input.toLowerCase().includes(s.identifier)||input.toLowerCase().includes(s.name.toLowerCase()));
+      const result=await inspectServer(m.author.id,match?.identifier||'',inspectKind);
+      await m.channel.send({content:result.slice(0,1900),allowedMentions:{parse:[]}});
+    }catch(err){console.error('[AI inspection]',err);await m.channel.send('I could not inspect the server. The account or API may be unavailable.');}
+    return;
+  }
   const selected = selectServer(m.author.id,input);
   let conversation;
   try { conversation = selected || await beginPowerConversation(m.author.id,input); }
