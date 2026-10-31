@@ -69,3 +69,10 @@ Use `node src/index.js` as the final foreground process in Startup (prefer `exec
 `/ai update` fetches `main`, backs up and restores `.env`, installs dependencies, checks syntax and optionally restarts its own Pterodactyl server. To restart automatically, configure `AI_BOT_SERVER_ID`, `PTERODACTYL_URL`, and `PTERODACTYL_CLIENT_API_KEY` with appropriate permission. Use `OWNER_ID` to restrict command use. Updates run with repository write access, so protect the GitHub account and review changes before deploying.
 
 Graceful shutdown changes are validated by CI startup and syntax checks; the real Pterodactyl stop signal must be verified on the deployed egg.
+
+## Verified natural-language automation (in development)
+The account bridge is **Paymenter AureliusAccounts** in `Isaacmessi30/aurelius-pterodactyl-bot`. The AI queries `/api/aurelius/discord/{discordId}` for a fresh verified association, then retrieves owned servers from the linked Pterodactyl user. It does not trust user-submitted IDs or emails as proof. Configure `PAYMENTER_URL`, `PAYMENTER_API_KEY`, `PTERODACTYL_APPLICATION_API_KEY`, `PTERODACTYL_CLIENT_API_KEY`, and `AI_ACTION_LOG_CHANNEL_ID` in the private runtime .env.
+
+The old `/ai request` command has been removed. Natural-language start/stop/restart requires the customer's confirmation and a mandatory action audit channel; the owner is not pinged. Natural-language subuser invitations, backups, startup changes and selected other modifications use customer confirmation followed by owner approval. The action registry enforces permission tiers independently of the language model. This is an incremental integration: live Paymenter/Pterodactyl operations and more advanced diagnostics require staged testing.
+
+Do not grant the AI access to unrelated customers. Protect the Application API key, which can read other accounts. Deploy with `PTERODACTYL_ACTIONS_ENABLED=false` until live ownership verification has been tested.
