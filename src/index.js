@@ -271,13 +271,35 @@ async function handleCommand(i) {
       });
       if(!r.ok)throw Error('DeepSeek balance API returned HTTP '+r.status);
       const data=await r.json();
-      const rows=(data.balance_infos||[]).slice(0,5).map(b=>(
-        {name:b.currency||'Unknown currency',value:'Total: **'+b.total_balance+'**\\nPaid: '+b.topped_up_balance+'\\nGranted: '+b.granted_balance}
-      ));
-      return i.editReply({embeds:[professionalEmbed('DeepSeek • API Balance',
-        'API availability: **'+(data.is_available?'Available':'Unavailable')+'**',
-        rows.length?rows:[{name:'Balance',value:'No balance details returned.'}],
-        data.is_available?'success':'warning')]});
+      const balances = Array.isArray(data.balance_infos) ? data.balance_infos.slice(0, 5) : [];
+      const money = (value, currency) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return String(value ?? 'Unavailable');
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency', currency,
+          minimumFractionDigits: 2, maximumFractionDigits: 2
+        }).format(amount);
+      };
+      const fields = balances.flatMap(b => {
+        const currency = /^[A-Z]{3}$/.test(b.currency || '') ? b.currency : 'USD';
+        const prefix = balances.length > 1 ? currency + ' • ' : '';
+        return [
+          {name:prefix+'Paid', value:money(b.topped_up_balance, currency), inline:true},
+          {name:prefix+'Granted', value:money(b.granted_balance, currency), inline:true}
+        ];
+      });
+      fields.push({name:'API status',value:data.is_available ? 'Available' : 'Unavailable',inline:true});
+      fields.push({name:'Updated',value:'Just now',inline:true});
+      const headline = balances.length
+        ? balances.map(b => {
+            const currency = /^[A-Z]{3}$/.test(b.currency || '') ? b.currency : 'USD';
+            return '**' + money(b.total_balance, currency) + ' ' + currency + '**';
+          }).join('\\n')
+        : '**Balance unavailable**';
+      return i.editReply({embeds:[professionalEmbed('DeepSeek Balance',
+        '## Current balance\\n' + headline,
+        fields,
+        data.is_available ? 'success' : 'warning')]});
     }catch(err){console.error('[AI balance]',err.message);return i.editReply('Unable to retrieve DeepSeek balance: '+String(err.message).slice(0,160));}
   }
   if (sub === 'health') {
