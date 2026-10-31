@@ -120,8 +120,8 @@ function isTicket(channel) {
   return false;
 }
 function isStaff(member) {
-  return !!(member?.permissions?.has(PermissionFlagsBits.ManageGuild) ||
-    member?.roles?.cache?.some(r => config.staffRoleIds.includes(r.id)) ||
+  return !!(member?.permissions?.has?.(PermissionFlagsBits.ManageGuild) ||
+    (member?.roles?.cache?.some(r => config.staffRoleIds.includes(r.id)) || (Array.isArray(member?.roles) && member.roles.some(id=>config.staffRoleIds.includes(id)))) ||
     (Boolean(process.env.OWNER_ID) && member?.id === process.env.OWNER_ID));
 }
 function isAdmin(interaction) {
