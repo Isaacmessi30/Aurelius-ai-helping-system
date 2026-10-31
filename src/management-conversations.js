@@ -11,6 +11,11 @@ export function parseManagement(text) {
     return {action:'remove_subuser',values:{email}};
   if(/\b(create|make|take|skapa|ta)\b/i.test(s)&&/\b(backup|säkerhetskopia)\b/i.test(s))
     return {action:'create_backup',values:{}};
+  const scheduleChange=s.match(/(?:delete|remove|ta bort|radera|enable|disable|aktivera|inaktivera)\s+(?:schedule|schema|schemat|scheduled task)\s*(?:#|id\s*)?(\d+)/i);
+  if(scheduleChange) {
+    const del=/(?:delete|remove|ta bort|radera)/i.test(scheduleChange[0]);
+    return {action:del?'delete_schedule':'toggle_schedule',values:{scheduleId:scheduleChange[1]}};
+  }
   const restoration=s.match(/(?:restore|återställ)\s+(?:backup\s+)?([a-f0-9-]{36})/i);
   if(restoration)return {action:'restore_backup',values:{uuid:restoration[1]}};
   if(/\b(startup|startkommando|startscript|startup script)\b/i.test(s)) {
