@@ -59,3 +59,5 @@ Use `/ai setup` for ephemeral configuration with dropdowns for category, staff r
 Optional Pterodactyl support: set `PTERODACTYL_ACTIONS_ENABLED=true`, `PTERODACTYL_URL`, `PTERODACTYL_CLIENT_API_KEY`, and `OWNER_ID`. Customer can request `/ai request server:<short-id> action:<start|stop|restart>` inside a ticket. The configured review channel gets Accept Action, Deny Action and Staff Takeover buttons. Only `OWNER_ID` can act. Only power operations are implemented; there is no autonomous AI write access, and the owner must verify that the ticket requester owns the target server. All actions default disabled. Use a narrowly scoped Client API key, not an administrator Application API key. Approval state persists to `data/approvals.json`.
 
 Inquiry reader checks up to 500 recent ticket messages and logs whether the inquiry is found. The first reply should address the inquiry directly.
+
+AI messaging accurately describes the optional owner-approved Pterodactyl power workflow. Ordinary chat never executes live server actions.
