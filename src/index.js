@@ -6,7 +6,7 @@ import {
   SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
 } from 'discord.js';
 import OpenAI from 'openai';
-import { getVerifiedCustomer } from './identity.js';
+import { getVerifiedCustomer } from './identity-live.js';
 import { beginPowerConversation, selectServer, getPending, finish } from './conversations.js';
 import { mayExecute } from './action-policy.js';
 import { updateFromGitHub, restartOwnServer } from './updater.js';
@@ -340,10 +340,10 @@ client.on('interactionCreate', async i => {
   if (!i.isButton() || !i.customId.startsWith('ai:power:')) return;
   const [, , action, userId] = i.customId.split(':');
   if (i.user.id !== userId) return i.reply({content:'Only the requesting customer can confirm this action.',flags:MessageFlags.Ephemeral});
-  const pending = getPending(userId);
+  const pending = await getPending(userId);
   if (!pending || (action !== 'cancel' && pending.action !== action)) return i.reply({content:'This request has expired or is no longer valid.',flags:MessageFlags.Ephemeral});
   if (action === 'cancel') { finish(userId); return i.update({content:'Action cancelled.',components:[]}); }
-  if (!mayExecute(action,{verified:Boolean(getVerifiedCustomer(userId)),customerConfirmed:true}) ||
+  if (!mayExecute(action,{verified:Boolean(await getVerifiedCustomer(userId)),customerConfirmed:true}) ||
       process.env.PTERODACTYL_ACTIONS_ENABLED !== 'true') {
     return i.reply({content:'Action is unavailable or not authorized.',flags:MessageFlags.Ephemeral});
   }
@@ -379,7 +379,9 @@ client.on('messageCreate', async m => {
   }
   if (!input || input.startsWith('/') || input.length > 3500) return;
   const selected = selectServer(m.author.id,input);
-  const conversation = selected || beginPowerConversation(m.author.id,input);
+  let conversation;
+  try { conversation = selected || await beginPowerConversation(m.author.id,input); }
+  catch (err) { console.error('[AI ownership lookup]',err); await m.channel.send('Account verification is temporarily unavailable. No action was performed.'); return; }
   if (conversation) {
     if (conversation.type === 'confirm') {
       const controls = new ActionRowBuilder().addComponents(
