@@ -9,11 +9,11 @@ import OpenAI from 'openai';
 import { integrationHealth } from './health.js';
 import { diagnosticRequest, diagnosticStart } from './diagnostic-flow.js';
 import { getVerifiedCustomer } from './identity-live.js';
-import { beginPowerConversation, selectServer, getPending, finish } from './conversations.js';
+import { beginPowerConversation, selectServer, confirmSuggestion, getPending, finish } from './conversations.js';
 import { mayExecute, formatServerList } from './action-policy.js';
 import { inspectServer, subscriptions, paymentIssues } from './inspect.js';
 import { executeProtected } from './managed-actions.js';
-import { startManaged, continueManaged, pendingManaged, clearManaged } from './management-conversations.js';
+import { startManaged, continueManaged, pendingManaged, confirmManagedSuggestion, clearManaged } from './management-conversations.js';
 import { updateFromGitHub, restartOwnServer } from './updater.js';
 import { humanRequest, professionalEmbed, auditLog, setupPanel, setupOptions, createApproval, getApproval, resolveApproval, approvalCard, pterodactylPowerAction } from './support.js';
 
@@ -179,6 +179,7 @@ const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius
   .addSubcommand(s => s.setName('enable').setDescription('Enable AI replies'))
   .addSubcommand(s => s.setName('disable').setDescription('Disable AI replies'))
   .addSubcommand(s => s.setName('status').setDescription('Show configuration and monthly usage'))
+  .addSubcommand(s => s.setName('balance').setDescription('Owner-only DeepSeek API balance'))
   .addSubcommand(s => s.setName('health').setDescription('Check private billing and panel API integrations'))
   .addSubcommand(s => s.setName('summary').setDescription('Summarize this ticket for support staff'))
   .addSubcommand(s => s.setName('escalate').setDescription('Request a human support agent'))
@@ -259,6 +260,26 @@ async function handleCommand(i) {
     }
   }
   if (sub === 'setup') return i.reply({ ...setupPanel(config), flags: MessageFlags.Ephemeral });
+  if (sub === 'balance') {
+    if (!process.env.OWNER_ID || i.user.id !== process.env.OWNER_ID)
+      return i.reply({content:'This command is available only to the configured owner.',flags:MessageFlags.Ephemeral});
+    await i.deferReply({flags:MessageFlags.Ephemeral});
+    try{
+      const r=await fetch('https://api.deepseek.com/user/balance',{
+        headers:{Authorization:'Bearer '+process.env.DEEPSEEK_API_KEY,Accept:'application/json'},
+        signal:AbortSignal.timeout(12000),redirect:'error'
+      });
+      if(!r.ok)throw Error('DeepSeek balance API returned HTTP '+r.status);
+      const data=await r.json();
+      const rows=(data.balance_infos||[]).slice(0,5).map(b=>(
+        {name:b.currency||'Unknown currency',value:'Total: **'+b.total_balance+'**\\nPaid: '+b.topped_up_balance+'\\nGranted: '+b.granted_balance}
+      ));
+      return i.editReply({embeds:[professionalEmbed('DeepSeek • API Balance',
+        'API availability: **'+(data.is_available?'Available':'Unavailable')+'**',
+        rows.length?rows:[{name:'Balance',value:'No balance details returned.'}],
+        data.is_available?'success':'warning')]});
+    }catch(err){console.error('[AI balance]',err.message);return i.editReply('Unable to retrieve DeepSeek balance: '+String(err.message).slice(0,160));}
+  }
   if (sub === 'health') {
     await i.deferReply({flags:MessageFlags.Ephemeral});
     const h=await integrationHealth();
@@ -376,6 +397,39 @@ client.on('interactionCreate', async i => {
     else await i.reply(msg).catch(() => {});
   }
 });
+client.on('interactionCreate',async i=>{
+ if(!i.isButton()||!i.customId.startsWith('ai:serverpick:'))return;
+ const parts=i.customId.split(':'),mode=parts[2],decision=parts[3],owner=parts[4],serverId=parts[5];
+ if(i.user.id!==owner)return i.reply({content:'Only the requesting customer can confirm this server.',flags:MessageFlags.Ephemeral});
+ const m={guildId:i.guildId,channelId:i.channelId,author:{id:owner}};
+ const sk=i.guildId+':'+i.channelId+':'+owner;
+ if(decision==='deny'){
+   if(mode==='managed')clearManaged(m);else finish(sk);
+   return i.update({content:'Server selection cancelled. No action was performed.',components:[]});
+ }
+ if(!['managed','power'].includes(mode))return i.reply({content:'Unknown request.',flags:MessageFlags.Ephemeral});
+ try{
+  const account=await getVerifiedCustomer(owner);
+  const server=account?.servers.find(x=>x.identifier===serverId);
+  if(!server)return i.reply({content:'That server is no longer verified for your account.',flags:MessageFlags.Ephemeral});
+  if(mode==='managed'){
+    const intent=confirmManagedSuggestion(m,serverId);
+    if(!intent)return i.reply({content:'This request expired. Please try again.',flags:MessageFlags.Ephemeral});
+    const row=new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('ai:managed:confirm:'+owner).setLabel('Confirm request').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('ai:managed:cancel:'+owner).setLabel('Cancel').setStyle(ButtonStyle.Secondary));
+    return i.update({content:'**Server confirmed:** '+server.name+' | ID: '+server.identifier+
+      '\\nProposed action: **'+intent.action+'**. Please authorize this request for owner review.',components:[row]});
+  }
+  const request=confirmSuggestion(sk,serverId);
+  if(!request)return i.reply({content:'This request expired. Please try again.',flags:MessageFlags.Ephemeral});
+  const row=new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('ai:power:'+request.action+':'+owner).setLabel('Confirm '+request.signal).setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('ai:power:cancel:'+owner).setLabel('Cancel').setStyle(ButtonStyle.Secondary));
+  return i.update({content:'**Server confirmed:** '+server.name+' | ID: '+server.identifier+
+    '\\nPlease authorize **'+request.signal+'** for this server.',components:[row]});
+ }catch(err){console.error('[AI server suggestion]',err);return i.reply({content:'Unable to verify that server right now.',flags:MessageFlags.Ephemeral});}
+});
 client.on('interactionCreate', async i => {
   if(!i.isButton()||!i.customId.startsWith('ai:diagnose:'))return;
   const id=i.customId.split(':')[2];
@@ -472,7 +526,12 @@ client.on('messageCreate', async m => {
   try { managed = await continueManaged(m,input) || await startManaged(m,input); }
   catch(err) { console.error('[AI management request]',err); await m.channel.send('Account verification is unavailable. No changes were made.'); return; }
   if (managed) {
-    if(managed.type==='confirm') {
+    if(managed.type==='suggest'){
+      const row=new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ai:serverpick:managed:confirm:'+m.author.id+':'+managed.server.identifier).setLabel('Confirm').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ai:serverpick:managed:deny:'+m.author.id+':'+managed.server.identifier).setLabel('Deny').setStyle(ButtonStyle.Secondary));
+      await m.channel.send({content:managed.message,components:[row],allowedMentions:{parse:[]}});
+    } else if(managed.type==='confirm') {
       const row=new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('ai:managed:confirm:'+m.author.id).setLabel('Confirm request').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('ai:managed:cancel:'+m.author.id).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
@@ -521,7 +580,12 @@ client.on('messageCreate', async m => {
   try { conversation = selected || await beginPowerConversation(m.author.id,input,powerKey); }
   catch (err) { console.error('[AI ownership lookup]',err); await m.channel.send('Account verification is temporarily unavailable. No action was performed.'); return; }
   if (conversation) {
-    if (conversation.type === 'confirm') {
+    if(conversation.type==='suggest'){
+      const row=new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ai:serverpick:power:confirm:'+m.author.id+':'+conversation.server.identifier).setLabel('Confirm').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ai:serverpick:power:deny:'+m.author.id+':'+conversation.server.identifier).setLabel('Deny').setStyle(ButtonStyle.Secondary));
+      await m.channel.send({content:conversation.message,components:[row],allowedMentions:{parse:[]}});
+    } else if (conversation.type === 'confirm') {
       const controls = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('ai:power:'+conversation.request.action+':'+m.author.id).setStyle(ButtonStyle.Success).setLabel('Confirm '+conversation.request.signal),
         new ButtonBuilder().setCustomId('ai:power:cancel:'+m.author.id).setStyle(ButtonStyle.Secondary).setLabel('Cancel')
