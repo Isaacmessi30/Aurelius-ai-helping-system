@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   Client, GatewayIntentBits, ChannelType, PermissionFlagsBits,
-  SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
+  SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder
 } from 'discord.js';
 import OpenAI from 'openai';
 import { getVerifiedCustomer } from './identity-live.js';
@@ -177,6 +177,7 @@ const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius
   .addSubcommand(s => s.setName('enable').setDescription('Enable AI replies'))
   .addSubcommand(s => s.setName('disable').setDescription('Disable AI replies'))
   .addSubcommand(s => s.setName('status').setDescription('Show configuration and monthly usage'))
+  .addSubcommand(s => s.setName('summary').setDescription('Summarize this ticket for support staff'))
   .addSubcommand(s => s.setName('escalate').setDescription('Request a human support agent'))
   .addSubcommand(s => s.setName('reset').setDescription('Reset AI conversation in this ticket'))
   .addSubcommand(s => s.setName('knowledge').setDescription('Reload knowledge markdown files'))
@@ -206,6 +207,28 @@ const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius
 async function handleCommand(i) {
   const sub = i.options.getSubcommand();
   const group = i.options.getSubcommandGroup(false);
+  if (sub === 'summary') {
+    if (!isStaff(i.member) || !isTicket(i.channel))
+      return i.reply({content:'Only support staff can summarize configured tickets.',flags:MessageFlags.Ephemeral});
+    await i.deferReply();
+    try{
+      const messages=await i.channel.messages.fetch({limit:100});
+      const transcript=[...messages.values()].reverse()
+        .filter(m=>!m.author.bot||m.embeds?.length)
+        .map(m=>m.author.username+': '+(m.content||m.embeds.map(e=>e.description||e.title||'').join(' ')))
+        .join('\n').slice(-16000)
+        .replace(/(?:ptlc_|ptla_|sk-)[A-Za-z0-9_-]{12,}/g,'[REDACTED]');
+      const result=await ai.chat.completions.create({
+        model:config.model||process.env.DEEPSEEK_MODEL||'deepseek-flash',
+        max_tokens:750,temperature:0.2,thinking:{type:'disabled'},
+        messages:[{role:'system',content:'Summarize this customer support ticket for staff in concise bullet points. Include inquiry, steps attempted, unresolved problems and next action. Never invent facts or repeat sensitive secrets.'},
+          {role:'user',content:transcript}]
+      });
+      const answer=result.choices?.[0]?.message?.content||'No summary available.';
+      if(answer.length<=1900)return i.editReply({content:'**Ticket summary**\n'+answer});
+      return i.editReply({content:'Ticket summary attached.',files:[new AttachmentBuilder(Buffer.from(answer),{name:'ticket-summary.txt'})]});
+    }catch(err){console.error('[AI summary]',err);return i.editReply('Unable to summarize this ticket right now.');}
+  }
   if (sub === 'escalate') {
     if (!isTicket(i.channel)) return i.reply({ content: 'This command only works in a configured ticket channel.', flags: MessageFlags.Ephemeral });
     await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -270,6 +293,7 @@ client.on('interactionCreate', async i => {
   const record = getApproval(id);
   if (record && record.kind !== 'managed') return i.reply({content:'Legacy approval request blocked. Please create a fresh verified request.',flags:MessageFlags.Ephemeral});
   if (!record || record.status !== 'pending') return i.reply({content:'This request is no longer pending.',flags:MessageFlags.Ephemeral});
+  if (Date.now()-Date.parse(record.createdAt)>15*60*1000) { resolveApproval(id,'expired',i.user.id,'Review expired'); return i.reply({content:'This approval expired. Ask the customer to request it again.',flags:MessageFlags.Ephemeral}); }
   if (record.guildId !== i.guildId) return i.reply({content:'Wrong server.',flags:MessageFlags.Ephemeral});
   resolveApproval(id,'processing',i.user.id,'Awaiting action result');
   await i.deferUpdate();
