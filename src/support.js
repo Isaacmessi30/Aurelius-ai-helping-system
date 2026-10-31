@@ -45,9 +45,9 @@ export function setupOptions(kind) {
   );
   return null;
 }
-export function createApproval({ ticketId, customerId, serverId, action, guildId }) {
+export function createApproval({ ticketId, customerId, serverId, action, guildId, values = {}, kind = 'legacy' }) {
   const id = crypto.randomUUID();
-  approvals[id] = { id, ticketId, customerId, serverId, action, guildId, createdAt: stamp(), status: 'pending' };
+  approvals[id] = { id, ticketId, customerId, serverId, action, guildId, values, kind, createdAt: stamp(), status: 'pending' };
   write(approvals);
   return approvals[id];
 }
@@ -64,6 +64,7 @@ export function approvalCard(a) {
       { name: 'Customer', value: '<@'+a.customerId+'>', inline: true },
       { name: 'Server ID', value: '\`'+a.serverId+'\`' },
       { name: 'Requested action', value: a.action },
+      { name: 'Details', value: Object.entries(a.values || {}).map(([key,value])=>key+': '+String(value).slice(0,200)).join(' | ').slice(0,700) || 'None' },
       { name: 'Status', value: a.status.toUpperCase() }
     ], 'warning')],
     components: [new ActionRowBuilder().addComponents(
