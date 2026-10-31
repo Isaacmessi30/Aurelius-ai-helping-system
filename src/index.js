@@ -368,9 +368,10 @@ client.on('interactionCreate', async i => {
   if (!i.isButton() || !i.customId.startsWith('ai:power:')) return;
   const [, , action, userId] = i.customId.split(':');
   if (i.user.id !== userId) return i.reply({content:'Only the requesting customer can confirm this action.',flags:MessageFlags.Ephemeral});
-  const pending = await getPending(userId);
+  const sessionKey=i.guildId+':'+i.channelId+':'+userId;
+  const pending = await getPending(userId,sessionKey);
   if (!pending || (action !== 'cancel' && pending.action !== action)) return i.reply({content:'This request has expired or is no longer valid.',flags:MessageFlags.Ephemeral});
-  if (action === 'cancel') { finish(userId); return i.update({content:'Action cancelled.',components:[]}); }
+  if (action === 'cancel') { finish(sessionKey); return i.update({content:'Action cancelled.',components:[]}); }
   if (!mayExecute(action,{verified:Boolean(await getVerifiedCustomer(userId)),customerConfirmed:true}) ||
       process.env.PTERODACTYL_ACTIONS_ENABLED !== 'true') {
     return i.reply({content:'Action is unavailable or not authorized.',flags:MessageFlags.Ephemeral});
@@ -379,7 +380,7 @@ client.on('interactionCreate', async i => {
   const logId = process.env.AI_ACTION_LOG_CHANNEL_ID;
   const log = logId ? await client.channels.fetch(logId).catch(()=>null) : null;
   if (!log?.isTextBased()) return i.reply({content:'Live actions are disabled until an action-log channel is configured.',flags:MessageFlags.Ephemeral});
-  finish(userId); // single-use action request
+  finish(sessionKey); // single-use action request
   await i.deferUpdate();
   const summary = 'Customer <@'+userId+'> requested '+pending.signal+' for **'+pending.server.name+'** (\`'+pending.server.identifier+'\`) in <#'+i.channelId+'>.';
   try {
@@ -447,9 +448,10 @@ client.on('messageCreate', async m => {
     }catch(err){console.error('[AI inspection]',err);await m.channel.send('I could not inspect the server. The account or API may be unavailable.');}
     return;
   }
-  const selected = selectServer(m.author.id,input);
+  const powerKey=m.guildId+':'+m.channelId+':'+m.author.id;
+  const selected = selectServer(powerKey,input);
   let conversation;
-  try { conversation = selected || await beginPowerConversation(m.author.id,input); }
+  try { conversation = selected || await beginPowerConversation(m.author.id,input,powerKey); }
   catch (err) { console.error('[AI ownership lookup]',err); await m.channel.send('Account verification is temporarily unavailable. No action was performed.'); return; }
   if (conversation) {
     if (conversation.type === 'confirm') {
