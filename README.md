@@ -88,3 +88,6 @@ Run `/ai health` as an owner or server manager to inspect Paymenter and Pterodac
 
 ## Console diagnostics (staged)
 When a customer reports a crash or startup error, the AI verifies account ownership and retrieves a bounded snapshot of Pterodactyl console output over the authenticated WebSocket. Potential credentials are redacted before displaying output. If no error is found, the user may choose **Start for diagnosis**; the bot logs the request, sends a start power signal and retrieves startup output. No file edits or repeated automatic starts are performed. Requires Node 22's WebSocket implementation, enabled live actions for startup, and a configured audit channel. Live end-to-end verification is still required.
+
+## Owner DeepSeek balance and server suggestions
+`/ai balance` checks DeepSeek's official balance endpoint and responds ephemerally only to `OWNER_ID`. Server selection accepts exact names/IDs and conservatively suggests likely partial/typo matches; suggestions require Confirm or Deny before the separate action confirmation. Uncertain/ambiguous matches still show the server list.
