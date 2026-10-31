@@ -32,3 +32,12 @@ test('power actions are not confused with backup or startup requests',()=>{
   assert.equal(recognizePower('Please stop the bot').signal,'stop');
   assert.equal(recognizePower('Please create a backup'),null);
 });
+
+test('schedule mutations always require owner approval',()=>{
+  for (const action of ['create_schedule','toggle_schedule','delete_schedule']) {
+    assert.equal(requirement(action),'owner');
+    assert.equal(mayExecute(action,{verified:true,customerConfirmed:true}),false);
+  }
+  assert.deepEqual(parseManagement('Delete schedule 12'),{action:'delete_schedule',values:{scheduleId:'12'}});
+  assert.deepEqual(parseManagement('Disable schedule 8'),{action:'toggle_schedule',values:{scheduleId:'8'}});
+});
