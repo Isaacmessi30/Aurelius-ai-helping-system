@@ -57,7 +57,7 @@ export async function executeProtected(request) {
     return 'Restore submitted. Existing matching files may have been overwritten.';
   }
   if(request.action==='startup_variable'){
-    if(!/^[A-Z0-9_]{1,100}$/.test(v.key||'')||typeof v.value!=='string'||v.value.length>500)
+    if(!/^[A-Z0-9_]{1,100}$/.test(v.key||'')||/(TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY|AUTH)/i.test(v.key||'')||typeof v.value!=='string'||v.value.length>500)
       throw Error('Invalid startup variable');
     const vars=await api(base+'/startup');
     if(!(vars.data||[]).some(x=>x.attributes?.env_variable===v.key&&x.attributes?.is_editable))
