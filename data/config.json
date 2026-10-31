@@ -1,0 +1,14 @@
+{
+  "enabled": false,
+  "channelIds": [],
+  "categoryIds": [],
+  "staffRoleIds": [],
+  "logChannelId": "",
+  "language": "en",
+  "autoEscalate": true,
+  "maxHistory": 12,
+  "cooldownSeconds": 10,
+  "maxOutputTokens": 500,
+  "monthlyRequestLimit": 1000,
+  "monthlyTokenLimit": 1000000
+}
