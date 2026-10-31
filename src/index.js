@@ -23,7 +23,23 @@ function readConfig() {
   try { return { ...DEFAULT, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) }; }
   catch { return { ...DEFAULT }; }
 }
-let config = readConfig();
+function parseIds(value) {
+  return value.split(',').map(x => x.trim()).filter(x => /^\d{15,22}$/.test(x));
+}
+function envConfig(cfg) {
+  const keys = { TICKET_CHANNEL_IDS: 'channelIds', TICKET_CATEGORY_IDS: 'categoryIds', STAFF_ROLE_IDS: 'staffRoleIds' };
+  for (const [key, name] of Object.entries(keys)) if (process.env[key]) cfg[name] = parseIds(process.env[key]);
+  if (process.env.LOG_CHANNEL_ID) cfg.logChannelId = process.env.LOG_CHANNEL_ID;
+  if (process.env.AI_LANGUAGE) cfg.language = process.env.AI_LANGUAGE;
+  const numbers = { AI_COOLDOWN_SECONDS: 'cooldownSeconds', AI_MAX_HISTORY: 'maxHistory', AI_MAX_OUTPUT_TOKENS: 'maxOutputTokens', AI_MONTHLY_REQUEST_LIMIT: 'monthlyRequestLimit', AI_MONTHLY_TOKEN_LIMIT: 'monthlyTokenLimit' };
+  for (const [key, name] of Object.entries(numbers)) {
+    if (process.env[key] && Number.isFinite(Number(process.env[key])) && Number(process.env[key]) > 0) cfg[name] = Number(process.env[key]);
+  }
+  if (process.env.AI_ENABLED === 'true') cfg.enabled = true;
+  if (process.env.AI_ENABLED === 'false') cfg.enabled = false;
+  return cfg;
+}
+let config = envConfig(readConfig());
 function saveConfig() {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
