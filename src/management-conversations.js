@@ -7,6 +7,8 @@ export function parseManagement(text) {
   const email=s.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/)?.[0];
   if(email && /\b(add|invite|give access|lägg till|bjud in)\b/i.test(s))
     return {action:'add_subuser',values:{email}};
+  if(email && /\b(remove|delete|revoke|ta bort|radera)\b/i.test(s))
+    return {action:'remove_subuser',values:{email}};
   if(/\b(create|make|take|skapa|ta)\b/i.test(s)&&/\b(backup|säkerhetskopia)\b/i.test(s))
     return {action:'create_backup',values:{}};
   const restoration=s.match(/(?:restore|återställ)\s+(?:backup\s+)?([a-f0-9-]{36})/i);
@@ -28,7 +30,7 @@ export async function startManaged(m,input) {
   if(!account)return {type:'text',message:'Connect your Discord account to Paymenter with **/account link** first. No changes were made.'};
   if(!account.servers.length)return {type:'text',message:'No verified Pterodactyl servers belong to your linked account.'};
   const matches=account.servers.filter(s=>input.toLowerCase().includes(s.identifier)||input.toLowerCase().includes(s.name.toLowerCase()));
-  const server=matches.length===1?matches[0]:null;
+  const server=matches.length===1?matches[0]:account.servers.length===1?account.servers[0]:null;
   sessions.set(requestKey(m),{intent,selected:server?.identifier||null,expires:Date.now()+300000});
   return server?{type:'confirm',server,intent,message:description(server,intent)}:
     {type:'text',message:'Which of your servers should I use? Reply with its full name or ID:\n'+formatServerList(account.servers)};
