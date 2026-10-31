@@ -12,6 +12,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run check
+      - run: npm test
       - name: Smoke-test bot initialization without network credentials
         env:
           AI_DRY_RUN: 'true'
