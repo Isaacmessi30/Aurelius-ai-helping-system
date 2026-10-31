@@ -83,3 +83,5 @@ All protected mutations also honor `PTERODACTYL_ACTIONS_ENABLED=false` as a fail
 
 ## Schedule operations
 Owner-approved schedule deletion and enable/disable are now recognized from natural-language requests containing the schedule ID. The AI first confirms the verified server with the customer. Schedule creation currently supports validated cron fields in the backend, but natural-language schedule creation and task editing remain incomplete. No duplicate-ticket system is planned.
+
+Run `/ai health` as an owner or server manager to inspect Paymenter and Pterodactyl API connectivity without revealing credentials. This is a connectivity probe; it does not certify server ownership or perform a live mutation.
