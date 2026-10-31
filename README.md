@@ -52,3 +52,8 @@ GitHub Actions runs `npm install` and `npm run check` on pull requests. Live Dis
 CI also exercises command initialization in `AI_DRY_RUN=true` mode without logging in to Discord or contacting DeepSeek.
 
 Ticket categories automatically include all their child text channels and threads; individual channel registration is optional. If the bot does not reply after a code update, deploy the latest `main` to Pterodactyl and restart.
+
+## Interactive configuration & approvals
+Use `/ai setup` for ephemeral configuration with dropdowns for category, staff role, audit channel and model. Customer messages asking for a human notify the staff roles. Ticket-opening embeds with an `Inquiry` field are read from the most recent 100 ticket messages and supplied as customer context.
+
+Optional Pterodactyl support: set `PTERODACTYL_ACTIONS_ENABLED=true`, `PTERODACTYL_URL`, `PTERODACTYL_CLIENT_API_KEY`, and `OWNER_ID`. Customer can request `/ai request server:<short-id> action:<start|stop|restart>` inside a ticket. The configured review channel gets Accept Action, Deny Action and Staff Takeover buttons. Only `OWNER_ID` can act. Only power operations are implemented; there is no autonomous AI write access, and the owner must verify that the ticket requester owns the target server. All actions default disabled. Use a narrowly scoped Client API key, not an administrator Application API key. Approval state persists to `data/approvals.json`.
