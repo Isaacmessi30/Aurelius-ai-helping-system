@@ -6,6 +6,7 @@ import {
   SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder
 } from 'discord.js';
 import OpenAI from 'openai';
+import { updateFromGitHub, restartOwnServer } from './updater.js';
 import { humanRequest, professionalEmbed, auditLog, setupPanel, setupOptions, createApproval, getApproval, resolveApproval, approvalCard, pterodactylPowerAction } from './support.js';
 
 const ROOT = process.cwd();
@@ -166,6 +167,7 @@ async function escalation(channel, requester, reason = 'Customer requested human
 }
 const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius AI support controls')
   .addSubcommand(s => s.setName('setup').setDescription('Open interactive AI configuration dashboard'))
+  .addSubcommand(s => s.setName('update').setDescription('Owner-only: update bot from GitHub and restart'))
   .addSubcommand(s => s.setName('request').setDescription('Request an owner-approved server power action')
     .addStringOption(o => o.setName('server').setDescription('Your Pterodactyl server short ID').setRequired(true))
     .addStringOption(o => o.setName('action').setDescription('Power action').setRequired(true)
@@ -221,6 +223,25 @@ async function handleCommand(i) {
     return i.editReply('A staff member has been notified.');
   }
   if (!isAdmin(i)) return i.reply({ content: 'Manage Server permission is required.', flags: MessageFlags.Ephemeral });
+  if (sub === 'update') {
+    if (!process.env.OWNER_ID || i.user.id !== process.env.OWNER_ID) {
+      return i.reply({ content: 'Only the configured bot owner can update the bot.', flags: MessageFlags.Ephemeral });
+    }
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const result = await updateFromGitHub();
+      if (!result.updated) return i.editReply('Already up to date. Dependencies and JavaScript syntax checked.');
+      if (!process.env.AI_BOT_SERVER_ID) {
+        return i.editReply('Updated to '+result.after.slice(0,8)+'. Automatic restart is not configured; restart in Pterodactyl manually.');
+      }
+      await i.editReply('Updated to '+result.after.slice(0,8)+'. Restarting the bot now.');
+      await restartOwnServer();
+      return;
+    } catch (error) {
+      console.error('[AI update]', error);
+      return i.editReply('Update failed or restart could not be requested: ' + String(error.message).slice(0, 1000));
+    }
+  }
   if (sub === 'setup') return i.reply({ ...setupPanel(config), flags: MessageFlags.Ephemeral });
   if (sub === 'status') {
     refreshUsage();
