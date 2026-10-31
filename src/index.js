@@ -9,7 +9,7 @@ import OpenAI from 'openai';
 import { getVerifiedCustomer } from './identity-live.js';
 import { beginPowerConversation, selectServer, getPending, finish } from './conversations.js';
 import { mayExecute, formatServerList } from './action-policy.js';
-import { inspectServer, subscriptions } from './inspect.js';
+import { inspectServer, subscriptions, paymentIssues } from './inspect.js';
 import { executeProtected } from './managed-actions.js';
 import { startManaged, continueManaged, pendingManaged, clearManaged } from './management-conversations.js';
 import { updateFromGitHub, restartOwnServer } from './updater.js';
@@ -451,12 +451,18 @@ client.on('messageCreate', async m => {
     }catch(err){await m.channel.send('Unable to verify your hosting account right now.');}
     return;
   }
+  if(/(?:payment failed|failed payment|payment issue|unpaid invoice|misslyckad betalning|betalningsproblem|obetalda fakturor)/i.test(input)) {
+    try{await m.channel.send({content:(await paymentIssues(m.author.id)).slice(0,1900),allowedMentions:{parse:[]}});}
+    catch(err){console.error('[Paymenter invoice lookup]',err);await m.channel.send('I could not review billing invoices. Please ask billing staff for assistance.');}
+    return;
+  }
   if(/(?:subscription|subscriptions|prenumeration|abonnemang|billing plan)/i.test(input)) {
     try{await m.channel.send({content:(await subscriptions(m.author.id)).slice(0,1900),allowedMentions:{parse:[]}});}
     catch(err){console.error('[Paymenter lookup]',err);await m.channel.send('Unable to retrieve your subscription information at the moment.');}
     return;
   }
   const inspectKind =
+    /(?:database|databas|mysql)/i.test(input)&&/(?:list|show|visa|check|inspect|diagnose)/i.test(input)?'databases':
     /(?:subuser|sub-user|medanvändare)/i.test(input)&&/(?:list|show|visa|who|vilka)/i.test(input)?'subusers':
     /(?:docker image|startup setting|startup command|start script)/i.test(input)&&/(?:show|view|visa|what|check|vilken)/i.test(input)?'startup':
     /(?:backup|säkerhetskopia)/i.test(input)&&/(?:list|show|visa|what)/i.test(input)?'backups':
