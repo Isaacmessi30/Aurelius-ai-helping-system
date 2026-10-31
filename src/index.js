@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import OpenAI from 'openai';
 import { integrationHealth } from './health.js';
+import { diagnosticRequest, diagnosticStart } from './diagnostic-flow.js';
 import { getVerifiedCustomer } from './identity-live.js';
 import { beginPowerConversation, selectServer, getPending, finish } from './conversations.js';
 import { mayExecute, formatServerList } from './action-policy.js';
@@ -376,6 +377,21 @@ client.on('interactionCreate', async i => {
   }
 });
 client.on('interactionCreate', async i => {
+  if(!i.isButton()||!i.customId.startsWith('ai:diagnose:'))return;
+  const id=i.customId.split(':')[2];
+  if(i.user.id!==id)return i.reply({content:'Only the customer can authorize this diagnostic start.',flags:MessageFlags.Ephemeral});
+  await i.deferUpdate();
+  try{
+    const logId=process.env.AI_ACTION_LOG_CHANNEL_ID;
+    const channel=logId?await client.channels.fetch(logId).catch(()=>null):null;
+    if(!channel?.isTextBased())throw Error('Action audit channel is not configured');
+    await channel.send({content:'Diagnostic server start requested by <@'+id+'> in <#'+i.channelId+'>.',allowedMentions:{parse:[]}});
+    const result=await diagnosticStart(i.guildId,i.channelId,id);
+    await channel.send({content:'Diagnostic start submitted for server '+result.server+'.',allowedMentions:{parse:[]}});
+    await i.editReply({content:'**Diagnostic startup result**\\n'+result.errors.slice(0,1500),components:[]});
+  }catch(err){console.error('[AI diagnose start]',err);await i.editReply({content:'Diagnostic startup failed; no further action taken. Ask staff to inspect the audit log.',components:[]}).catch(()=>{});}
+});
+client.on('interactionCreate', async i => {
   if (!i.isButton() || !i.customId.startsWith('ai:managed:')) return;
   const [, , decision, discordId] = i.customId.split(':');
   if (discordId !== i.user.id) return i.reply({content:'Only the customer who requested this change can confirm it.',flags:MessageFlags.Ephemeral});
@@ -442,6 +458,16 @@ client.on('messageCreate', async m => {
     return;
   }
   if (!input || input.startsWith('/') || input.length > 3500) return;
+  if(/(?:crash|crashing|error logs|console errors|startup error|startup logs|keeps failing|kraschar|startfel|felmeddelande)/i.test(input)){
+    try{
+      const diagnosis=await diagnosticRequest(m);
+      const row=diagnosis.canStart? [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ai:diagnose:'+m.author.id).setLabel('Start for diagnosis').setStyle(ButtonStyle.Primary)
+      )] : [];
+      await m.channel.send({content:diagnosis.text.slice(0,1900),components:row,allowedMentions:{parse:[]}});
+    }catch(err){console.error('[AI diagnosis]',err);await m.channel.send('Unable to retrieve console logs. Check the panel connection or contact staff.');}
+    return;
+  }
   let managed;
   try { managed = await continueManaged(m,input) || await startManaged(m,input); }
   catch(err) { console.error('[AI management request]',err); await m.channel.send('Account verification is unavailable. No changes were made.'); return; }
