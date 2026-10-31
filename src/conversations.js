@@ -1,4 +1,4 @@
-import { getVerifiedCustomer, verifiedServerFor } from './identity.js';
+import { getVerifiedCustomer, verifiedServerFor } from './identity-live.js';
 import { formatServerList, normalizeServerChoice, mayExecute } from './action-policy.js';
 
 // Natural language power requests must be confirmed by the customer,
@@ -14,10 +14,10 @@ export function recognizePower(text) {
   const matching = verbs.filter(v => v.expression.test(s));
   return matching.length === 1 ? matching[0] : null;
 }
-export function beginPowerConversation(discordId, input) {
+export async function beginPowerConversation(discordId, input) {
   const request = recognizePower(input);
   if (!request) return null;
-  const account = getVerifiedCustomer(discordId);
+  const account = await getVerifiedCustomer(discordId);
   if (!account) return { type:'unlinked', message:'Please connect your Discord account to billing using **/account link** first. I cannot manage servers until your account ownership is verified.' };
   if (!account.servers.length) return {type:'empty', message:'Your linked billing account has no verified Pterodactyl servers.'};
   const matches = account.servers.filter(s => [s.identifier,s.name].some(v => input.toLowerCase().includes(v.toLowerCase())));
@@ -36,16 +36,15 @@ export function selectServer(discordId,input) {
   state.selected=server.identifier;
   return {type:'confirm',server,request:state.request,message:'Please confirm: **'+state.request.signal+'** server **'+server.name+'** (ID: '+server.identifier+').'};
 }
-export function getPending(discordId) {
+export async function getPending(discordId) {
   const state=sessions.get(discordId);
   if (!state || state.expires<Date.now() || !state.selected) return null;
-  const account=getVerifiedCustomer(discordId);
-  const server=verifiedServerFor(account,state.selected);
+  const server=await verifiedServerFor(discordId,state.selected);
   return server ? {server,action:state.request.action,signal:state.request.signal} : null;
 }
 export function finish(discordId) { sessions.delete(discordId); }
-export function allowPower(discordId, action) {
-  const pending=getPending(discordId);
+export async function allowPower(discordId, action) {
+  const pending=await getPending(discordId);
   return pending && pending.action===action &&
     mayExecute(action,{verified:true,customerConfirmed:true});
 }
