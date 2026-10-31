@@ -341,7 +341,7 @@ client.on('interactionCreate', async i => {
   const [, , action, userId] = i.customId.split(':');
   if (i.user.id !== userId) return i.reply({content:'Only the requesting customer can confirm this action.',flags:MessageFlags.Ephemeral});
   const pending = getPending(userId);
-  if (!pending || pending.action !== action) return i.reply({content:'This request has expired or is no longer valid.',flags:MessageFlags.Ephemeral});
+  if (!pending || (action !== 'cancel' && pending.action !== action)) return i.reply({content:'This request has expired or is no longer valid.',flags:MessageFlags.Ephemeral});
   if (action === 'cancel') { finish(userId); return i.update({content:'Action cancelled.',components:[]}); }
   if (!mayExecute(action,{verified:Boolean(getVerifiedCustomer(userId)),customerConfirmed:true}) ||
       process.env.PTERODACTYL_ACTIONS_ENABLED !== 'true') {
