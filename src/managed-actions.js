@@ -16,7 +16,7 @@ async function api(path,method='GET',body=null,application=false) {
 const serverPath=id=>'/api/client/servers/'+encodeURIComponent(id);
 const validServer=id=>/^[a-z0-9]{8}$/.test(id);
 const validateEmail=s=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)&&s.length<=191;
-export const MUTATIONS=Object.freeze(['add_subuser','remove_subuser','startup_bash','startup_default','startup_custom','startup_variable','create_backup','restore_backup','create_schedule']);
+export const MUTATIONS=Object.freeze(['add_subuser','remove_subuser','startup_bash','startup_default','startup_custom','startup_variable','create_backup','restore_backup','create_schedule','delete_schedule','toggle_schedule']);
 export async function executeProtected(request) {
   if (process.env.PTERODACTYL_ACTIONS_ENABLED !== 'true') throw Error('Live Pterodactyl actions are disabled.');
   if (!MUTATIONS.includes(request.action))throw Error('Unsupported action');
@@ -74,6 +74,26 @@ export async function executeProtected(request) {
       throw Error('Unsupported schedule fields');
     await api(base+'/schedules','POST',{name,minute,hour,day_of_month,month,day_of_week,is_active:true});
     return 'Schedule created; it has no tasks until configured.';
+  }
+  if(request.action==='delete_schedule'||request.action==='toggle_schedule'){
+    const id=String(v.scheduleId||'');
+    if(!/^[1-9][0-9]*$/.test(id))throw Error('Valid schedule ID required');
+    const list=await api(base+'/schedules');
+    const item=(list.data||[]).find(s=>String(s.attributes?.id)===id);
+    if(!item)throw Error('Schedule does not belong to selected server');
+    if(request.action==='delete_schedule'){
+      await api(base+'/schedules/'+id,'DELETE');
+      return 'Schedule deleted.';
+    }
+    const attributes=item.attributes;
+    await api(base+'/schedules/'+id,'POST',{
+      name:attributes.name,minute:attributes.cron?.minute,hour:attributes.cron?.hour,
+      day_of_month:attributes.cron?.day_of_month,month:attributes.cron?.month,
+      day_of_week:attributes.cron?.day_of_week,
+      is_active:!attributes.is_active,
+      only_when_online:attributes.only_when_online??false
+    });
+    return 'Schedule '+(!attributes.is_active?'enabled':'disabled')+'.';
   }
   let startup;
   if(request.action==='startup_bash') startup='exec /bin/bash --noprofile --norc -i';
