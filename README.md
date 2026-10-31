@@ -91,3 +91,5 @@ When a customer reports a crash or startup error, the AI verifies account owners
 
 ## Owner DeepSeek balance and server suggestions
 `/ai balance` checks DeepSeek's official balance endpoint and responds ephemerally only to `OWNER_ID`. Server selection accepts exact names/IDs and conservatively suggests likely partial/typo matches; suggestions require Confirm or Deny before the separate action confirmation. Uncertain/ambiguous matches still show the server list.
+
+Updater preserves both tracked `.env` and `data/config.json`; other tracked modifications are still blocked. Existing installations need one manual pull with both files backed up before `/ai update` can use the fix.
