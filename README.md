@@ -50,3 +50,5 @@ DeepSeek API endpoint: https://api.deepseek.com, default model `deepseek-flash`.
 GitHub Actions runs `npm install` and `npm run check` on pull requests. Live Discord and DeepSeek authentication requires real credentials configured outside Git.
 
 CI also exercises command initialization in `AI_DRY_RUN=true` mode without logging in to Discord or contacting DeepSeek.
+
+Ticket categories automatically include all their child text channels and threads; individual channel registration is optional. If the bot does not reply after a code update, deploy the latest `main` to Pterodactyl and restart.
