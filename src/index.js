@@ -35,11 +35,12 @@ function envConfig(cfg) {
   for (const [key, name] of Object.entries(numbers)) {
     if (process.env[key] && Number.isFinite(Number(process.env[key])) && Number(process.env[key]) > 0) cfg[name] = Number(process.env[key]);
   }
-  if (process.env.AI_ENABLED === 'true') cfg.enabled = true;
-  if (process.env.AI_ENABLED === 'false') cfg.enabled = false;
+  // AI_ENABLED is only the initial default when no saved configuration exists.
+  // Slash-command enable/disable stays persistent in data/config.json.
   return cfg;
 }
 let config = envConfig(readConfig());
+console.log('[Aurelius AI] Startup config: enabled=' + config.enabled + ', ticketChannels=' + config.channelIds.length + ', ticketCategories=' + config.categoryIds.length);
 function saveConfig() {
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
@@ -199,10 +200,13 @@ client.on('interactionCreate', async i => {
   }
 });
 client.on('messageCreate', async m => {
-  if (!m.guild || m.author.bot || !config.enabled || !isTicket(m.channel)) return;
-  if (isStaff(m.member)) return; // Staff can take over without fighting the AI
+  if (!m.guild || m.author.bot) return;
+  if (!config.enabled) { if (process.env.AI_DEBUG === 'true') console.log('[AI debug] skipped: disabled'); return; }
+  if (!isTicket(m.channel)) { if (process.env.AI_DEBUG === 'true') console.log('[AI debug] skipped: channel not configured, channel=' + m.channelId + ', category=' + m.channel?.parentId); return; }
+  // Staff can test the assistant too; /ai disable pauses replies when taking over.
   const input = (m.content || '').trim();
   if (!input || input.startsWith('/') || input.length > 3500) return;
+  if (process.env.AI_DEBUG === 'true') console.log('[AI debug] ticket message received: channel=' + m.channelId + ', author=' + m.author.id);
   const now = Date.now(), key = m.channelId;
   if (locks.has(key) || now - (cooldowns.get(key) || 0) < config.cooldownSeconds * 1000) return;
   refreshUsage();
