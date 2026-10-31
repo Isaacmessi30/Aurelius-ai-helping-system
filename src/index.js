@@ -6,7 +6,7 @@ import {
   SlashCommandBuilder, REST, Routes, MessageFlags, ChannelSelectMenuBuilder, RoleSelectMenuBuilder, ActionRowBuilder, StringSelectMenuBuilder
 } from 'discord.js';
 import OpenAI from 'openai';
-import { humanRequest, professionalEmbed, auditLog, setupPanel, setupOptions } from './support.js';
+import { humanRequest, professionalEmbed, auditLog, setupPanel, setupOptions, createApproval, getApproval, resolveApproval, approvalCard, pterodactylPowerAction } from './support.js';
 
 const ROOT = process.cwd();
 const CONFIG_PATH = path.join(ROOT, 'data/config.json');
@@ -159,6 +159,10 @@ async function escalation(channel, requester, reason = 'Customer requested human
 }
 const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius AI support controls')
   .addSubcommand(s => s.setName('setup').setDescription('Open interactive AI configuration dashboard'))
+  .addSubcommand(s => s.setName('request').setDescription('Request an owner-approved server power action')
+    .addStringOption(o => o.setName('server').setDescription('Your Pterodactyl server short ID').setRequired(true))
+    .addStringOption(o => o.setName('action').setDescription('Power action').setRequired(true)
+      .addChoices({name:'Start',value:'start'},{name:'Stop',value:'stop'},{name:'Restart',value:'restart'})))
   .addSubcommand(s => s.setName('enable').setDescription('Enable AI replies'))
   .addSubcommand(s => s.setName('disable').setDescription('Disable AI replies'))
   .addSubcommand(s => s.setName('status').setDescription('Show configuration and monthly usage'))
@@ -191,6 +195,18 @@ const command = new SlashCommandBuilder().setName('ai').setDescription('Aurelius
 async function handleCommand(i) {
   const sub = i.options.getSubcommand();
   const group = i.options.getSubcommandGroup(false);
+  if (sub === 'request') {
+    if (!isTicket(i.channel)) return i.reply({content:'Use this inside a configured support ticket.',flags:MessageFlags.Ephemeral});
+    if (process.env.PTERODACTYL_ACTIONS_ENABLED !== 'true') return i.reply({content:'Server actions are not enabled. Ask staff for assistance.',flags:MessageFlags.Ephemeral});
+    if (!config.logChannelId) return i.reply({content:'Staff must configure a review channel first.',flags:MessageFlags.Ephemeral});
+    const serverId = i.options.getString('server',true).trim(), action = i.options.getString('action',true);
+    if (!/^[a-zA-Z0-9_-]{8,64}$/.test(serverId)) return i.reply({content:'Invalid server identifier.',flags:MessageFlags.Ephemeral});
+    const reviewerChannel = await client.channels.fetch(config.logChannelId).catch(()=>null);
+    if (!reviewerChannel?.isTextBased()) return i.reply({content:'Review channel unavailable.',flags:MessageFlags.Ephemeral});
+    const approval = createApproval({ticketId:i.channelId,customerId:i.user.id,serverId,action,guildId:i.guildId});
+    await reviewerChannel.send({...approvalCard(approval),allowedMentions:{parse:[]}});
+    return i.reply({content:'Your '+action+' request was sent for owner review. No server changes have been made.',flags:MessageFlags.Ephemeral});
+  }
   if (sub === 'escalate') {
     if (!isTicket(i.channel)) return i.reply({ content: 'This command only works in a configured ticket channel.', flags: MessageFlags.Ephemeral });
     await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -228,6 +244,39 @@ async function handleCommand(i) {
   saveConfig();
   return i.reply({ content: '✅ Updated Aurelius AI configuration (' + (group ? group + ' ' : '') + sub + ').', flags: MessageFlags.Ephemeral });
 }
+client.on('interactionCreate', async i => {
+  if (!i.isButton() || !i.customId.startsWith('ai:approval:')) return;
+  const owner = process.env.OWNER_ID;
+  if (!owner || i.user.id !== owner) return i.reply({content:'Only the configured bot owner can review live actions.',flags:MessageFlags.Ephemeral});
+  const [,,,decision,id] = i.customId.split(':');
+  const record = getApproval(id);
+  if (!record || record.status !== 'pending') return i.reply({content:'This request is no longer pending.',flags:MessageFlags.Ephemeral});
+  if (record.guildId !== i.guildId) return i.reply({content:'Wrong server.',flags:MessageFlags.Ephemeral});
+  await i.deferUpdate();
+  let status = decision === 'deny' ? 'denied' : decision === 'human' ? 'staff_takeover' : 'approved';
+  let detail = '';
+  if (decision === 'accept') {
+    try {
+      await pterodactylPowerAction(record.serverId,record.action);
+      status = 'executed'; detail = 'API accepted power signal';
+    } catch(err) { status = 'failed'; detail = err.message; }
+  }
+  resolveApproval(id,status,i.user.id,detail);
+  await i.message.edit({embeds:[professionalEmbed('Server action • '+status.replaceAll('_',' '),
+    'Ticket: <#'+record.ticketId+'>\nServer: \`'+record.serverId+'\`\nAction: '+record.action+
+    '\nReviewed by: <@'+i.user.id+'>\n'+(detail ? 'Result: '+detail : ''),[] ,
+    status === 'executed' ? 'success' : status === 'failed' ? 'denied' : 'info')],components:[]}).catch(()=>{});
+  const ticket = await client.channels.fetch(record.ticketId).catch(()=>null);
+  if (ticket?.isTextBased()) {
+    const customerMessage = status === 'executed'
+      ? 'Your '+record.action+' action was approved and submitted to Pterodactyl.'
+      : status === 'staff_takeover' ? 'A staff member will handle this request manually.'
+      : status === 'denied' ? 'Your requested action was declined by the owner.'
+      : 'The request could not be completed. Staff will need to investigate.';
+    await ticket.send({content:customerMessage,allowedMentions:{parse:[]}}).catch(()=>{});
+    if (status === 'staff_takeover') await escalation(ticket,{id:record.customerId},'Owner selected staff takeover');
+  }
+});
 client.on('interactionCreate', async i => {
   if (!i.isMessageComponent() || !i.customId.startsWith('ai:setup:')) return;
   if (!isAdmin(i)) return i.reply({ content:'Manage Server permission required.', flags:MessageFlags.Ephemeral });
