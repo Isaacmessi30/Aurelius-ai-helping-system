@@ -53,7 +53,7 @@ export function createApproval({ ticketId, customerId, serverId, action, guildId
 }
 export function getApproval(id) { return approvals[id]; }
 export function resolveApproval(id, status, reviewerId, detail = '') {
-  const p = approvals[id]; if (!p || p.status !== 'pending') return null;
+  const p = approvals[id]; if (!p || !['pending','processing'].includes(p.status)) return null;
   p.status = status; p.reviewerId = reviewerId; p.resolvedAt = stamp(); p.detail = detail;
   write(approvals); return p;
 }
