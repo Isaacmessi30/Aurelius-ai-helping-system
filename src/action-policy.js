@@ -28,6 +28,8 @@ export const ACTIONS = Object.freeze({
   create_backup: 'owner',
   restore_backup: 'owner',
   create_schedule: 'owner',
+  toggle_schedule: 'owner',
+  delete_schedule: 'owner',
   edit_schedule: 'owner',
   remove_schedule: 'owner',
   change_files: 'owner',
