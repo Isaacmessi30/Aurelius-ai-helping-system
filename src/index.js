@@ -54,11 +54,11 @@ function isTicket(channel) {
 function isStaff(member) {
   return !!(member?.permissions?.has(PermissionFlagsBits.ManageGuild) ||
     member?.roles?.cache?.some(r => config.staffRoleIds.includes(r.id)) ||
-    member?.id === process.env.OWNER_ID);
+    (Boolean(process.env.OWNER_ID) && member?.id === process.env.OWNER_ID));
 }
 function isAdmin(interaction) {
   return !!(interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ||
-    interaction.user.id === process.env.OWNER_ID);
+    (Boolean(process.env.OWNER_ID) && interaction.user.id === process.env.OWNER_ID));
 }
 function splitText(text) {
   const chunks = [];
@@ -185,7 +185,7 @@ client.on('interactionCreate', async i => {
 client.on('messageCreate', async m => {
   if (!m.guild || m.author.bot || !config.enabled || !isTicket(m.channel)) return;
   if (isStaff(m.member)) return; // Staff can take over without fighting the AI
-  const input = m.content.trim();
+  const input = (m.content || '').trim();
   if (!input || input.startsWith('/') || input.length > 3500) return;
   const now = Date.now(), key = m.channelId;
   if (locks.has(key) || now - (cooldowns.get(key) || 0) < config.cooldownSeconds * 1000) return;
