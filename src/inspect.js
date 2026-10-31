@@ -65,7 +65,7 @@ export async function paymentIssues(discordId) {
   const refs=doc.data?.relationships?.invoices?.data||[];
   const invoices=refs.map(ref=>ref.attributes?ref:(doc.included||[]).find(x=>x.id===ref.id&&x.type===ref.type)).filter(Boolean);
   const outstanding=invoices.filter(x=>!['paid','completed'].includes(String(x.attributes?.status||'').toLowerCase()));
-  return outstanding.length?'Invoices needing review:\\n'+outstanding.slice(0,10).map(x=>'Invoice '+x.id+' | Status: '+String(x.attributes?.status||'Unknown')).join('\\n')+
-    '\\nFor payment gateway decline reasons, a billing staff member may need to inspect the transaction.':
+  return outstanding.length?'Invoices needing review:\n'+outstanding.slice(0,10).map(x=>'Invoice '+x.id+' | Status: '+String(x.attributes?.status||'Unknown')).join('\n')+
+    '\nFor payment gateway decline reasons, a billing staff member may need to inspect the transaction.':
     'No unpaid or failed invoices were found in the billing account response. This does not verify the payment gateway status.';
 }
