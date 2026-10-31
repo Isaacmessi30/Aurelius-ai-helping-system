@@ -48,3 +48,5 @@ DeepSeek API endpoint: https://api.deepseek.com, default model `deepseek-flash`.
 
 ## Verification
 GitHub Actions runs `npm install` and `npm run check` on pull requests. Live Discord and DeepSeek authentication requires real credentials configured outside Git.
+
+CI also exercises command initialization in `AI_DRY_RUN=true` mode without logging in to Discord or contacting DeepSeek.
