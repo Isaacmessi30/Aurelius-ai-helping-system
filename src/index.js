@@ -403,6 +403,27 @@ client.on('messageCreate', async m => {
       allowedMentions: { parse: [] } }).catch(() => {});
   } finally { locks.delete(key); }
 });
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log('[Aurelius AI] Received ' + signal + '; closing Discord connection...');
+  const failsafe = setTimeout(() => {
+    console.error('[Aurelius AI] Shutdown timed out, exiting.');
+    process.exit(1);
+  }, 8000);
+  failsafe.unref();
+  try {
+    client.destroy();
+    console.log('[Aurelius AI] Discord client closed.');
+    process.exitCode = 0;
+  } catch (error) {
+    console.error('[Aurelius AI] Shutdown failed:', error);
+    process.exitCode = 1;
+  }
+}
+process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.once('SIGINT', () => { void shutdown('SIGINT'); });
 client.once('ready', () => console.log('Aurelius AI ready as ' + client.user.tag));
 async function main() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
