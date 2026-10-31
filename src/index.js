@@ -248,4 +248,13 @@ async function main() {
   console.log('Registered /ai command');
   await client.login(process.env.DISCORD_TOKEN);
 }
-main().catch(err => { console.error('Startup failed:', err); process.exitCode = 1; });
+if (process.env.AI_DRY_RUN === 'true') {
+  try {
+    const body = command.toJSON();
+    if (body.name !== 'ai' || !body.options?.length) throw new Error('Invalid slash command definition');
+    console.log('Dry-run OK: Discord client and slash commands initialized; no external requests sent.');
+    client.destroy();
+  } catch (err) { console.error('Dry-run failed:', err); process.exitCode = 1; }
+} else {
+  main().catch(err => { console.error('Startup failed:', err); process.exitCode = 1; });
+}
