@@ -75,7 +75,7 @@ async function ticketInquiry(channel) {
           if (field?.value) { found = field.value; break; }
           const description = embed.description || '';
           // Support bold headings, inline headings and fenced code blocks.
-          const match = description.match(/(?:^|\n)\s*(?:\\*\\*)?Inquiry(?:\\*\\*)?\s*:\s*([\s\S]*?)(?=\n\s*(?:Our team|Please keep|\\*\\*[A-Z][^\n]*:)|$)/i);
+          const match = description.match(/Inquiry[^:\n]*:\s*([\s\S]*?)(?=\n\s*(?:Our team|Please keep)|$)/i);
           if (match) { found = match[1]; break; }
         }
         if (found) break;
